@@ -129,8 +129,9 @@ venv.bak/
 # Cython debug symbols
 cython_debug/ 
 
-Archive.zip
+test.zip
 img_storage/
 
 # uv package manager lock file
 uv.lock
+results/

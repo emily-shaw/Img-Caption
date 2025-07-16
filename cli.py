@@ -4,6 +4,7 @@ import os
 import zipfile
 from dotenv import load_dotenv
 from image_captioners import run_llava13b, run_blip, run_moondream2
+import json
 
 @click.command()
 @click.argument('zipfile_path', type=click.Path(exists=True))
@@ -48,19 +49,42 @@ def main(zipfile_path):
     if not images:
         print("No images found in img_storage to process.")
         sys.exit(1)
-    first_image_path = os.path.join(output_dir, images[0])
 
-    print("Running LLaVA-13B (prompt: 'What is a short and accurate caption for this image?') on the first image in img_storage...")
-    print(run_llava13b(first_image_path, "What is a short and accurate caption for this image?"))
+    output_json_dir = "results"
+    os.makedirs(output_json_dir, exist_ok=True)
 
-    print("Running BLIP on the first image in img_storage...")
-    print(run_blip(first_image_path))
+    combos = [
+        ("yorickvp_llava-13b", "What is a short and accurate caption for this image?", run_llava13b),
+        ("yorickvp_llava-13b", "image captioning", run_llava13b),
+        ("salesforce_blip", None, run_blip),
+        ("lucataco_moondream2", None, run_moondream2),
+    ]
 
-    print("Running Moondream2 on the first image in img_storage...")
-    print(run_moondream2(first_image_path))
+    results_dict = {}
+    for model_name, prompt, _ in combos:
+        key = (model_name, prompt)
+        results_dict[key] = []
 
-    print("Running LLaVA-13B (prompt: 'image captioning') on the first image in img_storage...")
-    print(run_llava13b(first_image_path, "image captioning"))
+    for image_name in images:
+        image_path = os.path.join(output_dir, image_name)
+        for model_name, prompt, func in combos:
+            if prompt:
+                response = func(image_path, prompt)
+            else:
+                response = func(image_path)
+            results_dict[(model_name, prompt)].append({
+                "image_name": image_name,
+                "response": response
+            })
+            print(f"Finished {model_name} (prompt: '{prompt}') on {image_name}")
+            print(f"Output: {response}\n")
+
+    for (model_name, prompt), results in results_dict.items():
+        prompt_part = prompt.replace(" ", "_").replace("?", "") if prompt else "default"
+        json_name = f"{model_name}_{prompt_part}_results.json"
+        with open(os.path.join(output_json_dir, json_name), "w") as f:
+            json.dump(results, f, indent=2)
+        print(f"Saved {json_name}")
 
 if __name__ == "__main__":
     main() 
