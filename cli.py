@@ -37,13 +37,11 @@ def main(zipfile_path):
     else:
         print(f"Images extracted to {output_dir}/")
 
-
     load_dotenv()
     api_token = os.getenv("REPLICATE_API_TOKEN")
     if not api_token:
         print("REPLICATE_API_TOKEN not found in environment or .env file.")
         sys.exit(1)
-    
     
     images = [f for f in os.listdir(output_dir) if os.path.splitext(f)[1].lower() in image_exts and not f.startswith(".")]
     if not images:
@@ -82,7 +80,8 @@ def main(zipfile_path):
     for (model_name, prompt), results in results_dict.items():
         prompt_part = prompt.replace(" ", "_").replace("?", "") if prompt else "default"
         json_name = f"{model_name}_{prompt_part}_results.json"
-        with open(os.path.join(output_json_dir, json_name), "w") as f:
+        json_path = os.path.join(output_json_dir, json_name)
+        with open(json_path, "w") as f:
             json.dump(results, f, indent=2)
         print(f"Saved {json_name}")
 
