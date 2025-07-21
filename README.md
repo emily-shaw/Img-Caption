@@ -59,7 +59,6 @@ This will caption all images from both `cat.zip` and `chole.zip` (in order, no d
   "prompt": "...the prompt used...",
   "results": [
     {"image_name": "...", "response": "..."},
-    ...
   ]
 }
 ```
