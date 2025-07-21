@@ -96,15 +96,18 @@ def main(zipfile_paths, process_zips):
             print(f"Finished {model_name} (prompt: '{prompt}') on {image_name}")
             print(f"Output: {response}\n")
 
-    # Save results with model name, zip file name(s), and first two words of prompt
+    # Save results with zip file name(s) and model name only, and put the prompt at the top of the JSON file
     zip_basenames = [os.path.splitext(os.path.basename(z))[0] for z in zips_to_process]
     zip_part = "_".join(zip_basenames)
     for (model_name, prompt), results in results_dict.items():
-        prompt_words = "_".join(prompt.split()[:2]) if prompt else "default"
-        json_name = f"{model_name}_{zip_part}_{prompt_words}.json"
+        json_name = f"{zip_part}_{model_name}.json"
         json_path = os.path.join(output_json_dir, json_name)
+        output_data = {
+            "prompt": prompt,
+            "results": results
+        }
         with open(json_path, "w") as f:
-            json.dump(results, f, indent=2)
+            json.dump(output_data, f, indent=2)
         print(f"Saved {json_name}")
 
 if __name__ == "__main__":
