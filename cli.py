@@ -6,22 +6,57 @@ from dotenv import load_dotenv
 from image_captioners import run_llava13b, run_blip, run_moondream2, run_gpt4_vision
 import json
 import csv
+import hashlib
 
 
 load_dotenv()
 
 
-@click.command()
-@click.argument('zipfile_paths', nargs=-1, type=click.Path(exists=True))
-def main(zipfile_paths):
-    if not zipfile_paths:
-        print("Please provide at least one zip file.")
-        sys.exit(1)
-    print(f"Received zip files: {zipfile_paths}")
+def prompt_to_hash(prompt):
+    return hashlib.sha256(prompt.encode('utf-8')).hexdigest()[:8]
 
-    output_dir = "img_storage"
-    os.makedirs(output_dir, exist_ok=True)
-    image_exts = {'.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff', '.webp'}
+
+def save_results_json(results_dict, zip_basename, output_json_dir):
+    for (model_name, prompt), results in results_dict.items():
+        prompt_hash = prompt_to_hash(prompt)
+        json_name = f"{zip_basename}_{model_name}_{prompt_hash}.json"
+        json_path = os.path.join(output_json_dir, json_name)
+        output_data = {
+            "prompt": prompt,
+            "results": results
+        }
+        with open(json_path, "w") as f:
+            json.dump(output_data, f, indent=2)
+        print(f"Saved {json_name}")
+
+def save_results_csv(results_dict, images, zip_basename, output_json_dir):
+    all_images = sorted(images)
+    model_names = []
+    prompts = []
+    model_to_caption = {}
+    for (model_name, prompt), results in results_dict.items():
+        model_names.append(model_name)
+        prompts.append(prompt)
+        img_to_caption = {r["image_name"]: r["response"] for r in results}
+        model_to_caption[model_name] = img_to_caption
+    csv_name = f"{zip_basename}_all_captions.csv"
+    csv_path = os.path.join(output_json_dir, csv_name)
+    with open(csv_path, "w", newline="") as csvfile:
+        writer = csv.writer(csvfile)
+        # First row: zip file name, then model names
+        writer.writerow([zip_basename] + model_names)
+        # Second row: 'captions' in the first cell, then prompts for each model
+        writer.writerow(["captions"] + prompts)
+        # Each subsequent row: image name, then captions for each model
+        for img in all_images:
+            row = [img]
+            for model_name in model_names:
+                row.append(model_to_caption[model_name].get(img, ""))
+            writer.writerow(row)
+    print(f"Saved {csv_name}")
+
+
+def extract_images_from_zips(zipfile_paths, output_dir, image_exts):
     zip_to_images = {}
     for zipfile_path in zipfile_paths:
         images_in_this_zip = []
@@ -49,6 +84,21 @@ def main(zipfile_paths):
         else:
             print(f"Images extracted to {output_dir}/ from {zipfile_path}")
         zip_to_images[zipfile_path] = images_in_this_zip
+    return zip_to_images
+
+
+@click.command()
+@click.argument('zipfile_paths', nargs=-1, type=click.Path(exists=True))
+def main(zipfile_paths):
+    if not zipfile_paths:
+        print("Please provide at least one zip file.")
+        sys.exit(1)
+    print(f"Received zip files: {zipfile_paths}")
+
+    output_dir = "img_storage"
+    os.makedirs(output_dir, exist_ok=True)
+    image_exts = {'.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff', '.webp'}
+    zip_to_images = extract_images_from_zips(zipfile_paths, output_dir, image_exts)
 
     # Always process all unique zip files in order
     seen = set()
@@ -105,42 +155,10 @@ def main(zipfile_paths):
                 print(f"Output: {response}\n")
 
         # Save results with zip file name and model name only, and put the prompt at the top of the JSON file
-        for (model_name, prompt), results in results_dict.items():
-            json_name = f"{zip_basename}_{model_name}.json"
-            json_path = os.path.join(output_json_dir, json_name)
-            output_data = {
-                "prompt": prompt,
-                "results": results
-            }
-            with open(json_path, "w") as f:
-                json.dump(output_data, f, indent=2)
-            print(f"Saved {json_name}")
+        save_results_json(results_dict, zip_basename, output_json_dir)
 
         # Create a CSV for all captions from all models for the current zip
-        all_images = sorted(images)
-        model_names = []
-        prompts = []
-        model_to_caption = {}
-        for (model_name, prompt), results in results_dict.items():
-            model_names.append(model_name)
-            prompts.append(prompt)
-            img_to_caption = {r["image_name"]: r["response"] for r in results}
-            model_to_caption[model_name] = img_to_caption
-        csv_name = f"{zip_basename}_all_captions.csv"
-        csv_path = os.path.join(output_json_dir, csv_name)
-        with open(csv_path, "w", newline="") as csvfile:
-            writer = csv.writer(csvfile)
-            # First row: zip file name, then model names
-            writer.writerow([zip_basename] + model_names)
-            # Second row: 'captions' in the first cell, then prompts for each model
-            writer.writerow(["captions"] + prompts)
-            # Each subsequent row: image name, then captions for each model
-            for img in all_images:
-                row = [img]
-                for model_name in model_names:
-                    row.append(model_to_caption[model_name].get(img, ""))
-                writer.writerow(row)
-        print(f"Saved {csv_name}")
+        save_results_csv(results_dict, images, zip_basename, output_json_dir)
 
 if __name__ == "__main__":
     main() 
