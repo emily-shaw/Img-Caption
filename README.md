@@ -1,76 +1,104 @@
 # Img-Caption
 
-A toolkit for summarizing image captions and extracting the primary character's physical features from batches of image captioning results. Uses Anthropic Claude for summarization and outputs structured summaries and CSV aggregations for analysis.
+A toolkit for generating and summarizing image captions, focusing on extracting the primary character's physical features from batches of images. Supports multiple vision models (OpenAI GPT-4 Vision, Replicate models) and flexible batch processing.
 
 ## Features
-- Processes batches of image captioning results (JSON format)
+- Run multiple image captioning models on batches of images
+- Supports OpenAI GPT-4 Vision and Replicate models (LLaVA, BLIP, Moondream2)
 - Summarizes the main character's physical features from all captions per model
-- Aggregates all results and summaries into a single CSV for easy analysis
+- Aggregates all results and summaries into a single CSV for analysis
+- Flexible CLI: process multiple zip files, each zip is processed independently
+- Output JSON files include prompt and are named by zip/model/prompt
 
 ## Directory Structure
-- `results/` — Place your model captioning result JSON files here (input)
-- `summaries/` — Summaries and aggregated CSVs will be written here (output)
+- `img_storage/` — Images extracted from zip files for processing
+- `results/` — Model captioning result JSON files (output)
+- `summaries/` — Summaries and aggregated CSVs (output)
 - `summarize_characters.py` — Main script for summarizing and aggregating
-- `image_captioners.py`, `cli.py` — (Other project scripts)
+- `image_captioners.py`, `cli.py` — Model and CLI logic
 
 ## Setup
 1. **Clone the repository**
 2. **Install dependencies**
-   - Python 3.8+
-   - Add required packages with [uv](https://github.com/astral-sh/uv):
+   - Python 3.9+
+   - Install with [uv](https://github.com/astral-sh/uv):
      ```bash
      uv add -r requirements.txt
      # or, if using pyproject.toml:
      uv add .
      ```
-3. **Set up Anthropic API key**
+3. **Set up API keys in .env**
    - Create a `.env` file in the project root with:
      ```env
+     OPENAI_API_KEY=your_openai_key_here
+     REPLICATE_API_TOKEN=your_replicate_token_here
      ANTHROPIC_API_KEY=your_claude_api_key_here
-     ```
-   - Or export it in your shell:
-     ```bash
-     export ANTHROPIC_API_KEY=your_claude_api_key_here
      ```
 
 ## Usage
 
-### 1. Summarize Characters from Captions
+### 1. Run Image Captioning on Zip Files
+Extracts images from one or more zip files and runs the selected models (and prompts). Results are saved in `results/`.
+
+**Basic usage:**
+```bash
+uv run cli.py cat.zip chole.zip
+```
+This will caption all images from both `cat.zip` and `chole.zip` (in order, no duplicates).
+
+- Only uncommented models in the `combos` list in `cli.py` will be run. You can run the same model with different prompts by adding multiple entries to `combos`.
+- Each model call uses a new session/client for isolation.
+- Output files are named as `<zipname>_<modelname>_<promptshort>.json` (e.g., `cat_openai_gpt4_vision_Look_at.json` or `cat_salesforce_blip_none.json`).
+  - `<promptshort>` is the first two words of the prompt, or 'none' if no prompt is provided.
+- Each zip also produces a CSV file of all captions for that zip: `<zipname>_all_captions.csv`.
+- The prompt used is included as a top-level field in the output JSON, along with a `prompt_short` field.
+
+**Output JSON format:**
+```json
+{
+  "prompt": "...the prompt used...",
+  "results": [
+    {"image_name": "...", "response": "..."},
+    ...
+  ]
+}
+```
+
+**Output CSV format:**
+- First row: zip file name, then model names
+- Second row: 'captions', then prompts for each model
+- Each subsequent row: image name, then captions for each model
+
+### 2. Summarize Characters from Captions
 This will process all JSON files in `results/`, send captions to Claude, and write summaries to `summaries/`.
 
 ```bash
-python summarize_characters.py
+uv run summarize_characters.py
 ```
 
 - Each summary will be saved as a JSON file in `summaries/`, named after the input file.
 
-### 2. Aggregate All Results to CSV
+### 3. Aggregate All Results to CSV
 After summarization, aggregate all results and summaries into a single CSV:
 
 ```bash
-python summarize_characters.py aggregate
+uv run summarize_characters.py aggregate
 ```
 
 - This creates `summaries/character_summaries.csv` with columns:
   - `model_name`, `image_name`, `caption`, `summary_type`, `summary_features`
 
-## Input Format
-- Each file in `results/` should be a JSON list of objects, each with at least:
-  - `image_name`: Name of the image
-  - `response`: Caption text
-
-## Output
-- **Summaries:** One JSON summary per input file in `summaries/`
-- **Aggregated CSV:** `summaries/character_summaries.csv` with all image captions and per-model character summaries
-
-## Notes
-- Only features explicitly mentioned in captions are included in summaries (no guessing/inference)
-- Accessories (e.g., glasses, collar) are included if described
-- Background, actions, and clothing are excluded from summaries
+## Model Support
+- **OpenAI GPT-4 Vision**: Uses the OpenAI API, requires `OPENAI_API_KEY`.
+- **Replicate models**: LLaVA, BLIP, Moondream2 (see `image_captioners.py` for details), require `REPLICATE_API_TOKEN`.
+- **Anthropic Claude**: Used for summarization, requires `ANTHROPIC_API_KEY`.
+- Each model call is isolated in its own session/client for reliability.
 
 ## Troubleshooting
+- If you see errors about missing API keys, ensure your `.env` file is present and correct.
 - If you see `Error code: 529 - overloaded`, the Claude API is temporarily unavailable. Wait and retry.
-- Ensure your API key is valid and you have internet access.
+- Ensure your API keys are valid and you have internet access.
+- If you see errors about zip files or images not found, check your zip file paths and contents.
 
 ## License
 MIT License (add your license here if different)
