@@ -7,8 +7,8 @@ A toolkit for generating and summarizing image captions, focusing on extracting 
 - Supports OpenAI GPT-4 Vision and Replicate models (LLaVA, BLIP, Moondream2)
 - Summarizes the main character's physical features from all captions per model
 - Aggregates all results and summaries into a single CSV for analysis
-- Flexible CLI: process multiple zip files, select which zips to caption
-- Output JSON files include prompt and are named by zip/model
+- Flexible CLI: process multiple zip files, each zip is processed independently
+- Output JSON files include prompt and are named by zip/model/prompt
 
 ## Directory Structure
 - `img_storage/` — Images extracted from zip files for processing
@@ -38,24 +38,20 @@ A toolkit for generating and summarizing image captions, focusing on extracting 
 ## Usage
 
 ### 1. Run Image Captioning on Zip Files
-Extracts images from one or more zip files and runs the selected models. Results are saved in `results/`.
+Extracts images from one or more zip files and runs the selected models (and prompts). Results are saved in `results/`.
 
-**Basic usage (processes only the last zip):**
+**Basic usage:**
 ```bash
 uv run cli.py cat.zip chole.zip
 ```
-This will caption only images from `chole.zip`.
+This will caption all images from both `cat.zip` and `chole.zip` (in order, no duplicates).
 
-**Process specific zips (comma-separated):**
-```bash
-uv run cli.py cat.zip chole.zip --process-zips cat.zip,chole.zip
-```
-This will caption images from both `cat.zip` and `chole.zip`.
-
-- Only uncommented models in the `combos` list in `cli.py` will be run.
+- Only uncommented models in the `combos` list in `cli.py` will be run. You can run the same model with different prompts by adding multiple entries to `combos`.
 - Each model call uses a new session/client for isolation.
-- Output files are named as `<zipname>_<modelname>.json` (e.g., `cat_openai_gpt4_vision.json`).
-- The prompt used is included as a top-level field in the output JSON.
+- Output files are named as `<zipname>_<modelname>_<promptshort>.json` (e.g., `cat_openai_gpt4_vision_Look_at.json` or `cat_salesforce_blip_none.json`).
+  - `<promptshort>` is the first two words of the prompt, or 'none' if no prompt is provided.
+- Each zip also produces a CSV file of all captions for that zip: `<zipname>_all_captions.csv`.
+- The prompt used is included as a top-level field in the output JSON, along with a `prompt_short` field.
 
 **Output JSON format:**
 ```json
@@ -67,6 +63,11 @@ This will caption images from both `cat.zip` and `chole.zip`.
   ]
 }
 ```
+
+**Output CSV format:**
+- First row: zip file name, then model names
+- Second row: 'captions', then prompts for each model
+- Each subsequent row: image name, then captions for each model
 
 ### 2. Summarize Characters from Captions
 This will process all JSON files in `results/`, send captions to Claude, and write summaries to `summaries/`.

@@ -106,13 +106,11 @@ def main(zipfile_paths):
 
         # Save results with zip file name and model name only, and put the prompt at the top of the JSON file
         for (model_name, prompt), results in results_dict.items():
-            prompt_short = "_".join(prompt.split()[:2]) if prompt else "none"
-            json_name = f"{zip_basename}_{model_name}_{prompt_short}.json"
+            json_name = f"{zip_basename}_{model_name}.json"
             json_path = os.path.join(output_json_dir, json_name)
             output_data = {
                 "prompt": prompt,
-                "results": results,
-                "prompt_short": prompt_short
+                "results": results
             }
             with open(json_path, "w") as f:
                 json.dump(output_data, f, indent=2)
