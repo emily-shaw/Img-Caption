@@ -130,9 +130,9 @@ venv.bak/
 cython_debug/ 
 
 test.zip
-img_storage/
 
-# uv package manager lock file
+img_storage/
 results/
 summaries/
+
 .DS_Store
