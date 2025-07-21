@@ -64,10 +64,8 @@ def load_captions(filepath: str) -> List[str]:
     try:
         with open(filepath, 'r') as f:
             data = json.load(f)
-        if not isinstance(data, list):
-            print(f"Warning: {filepath} does not contain a list of results")
-            return []
-        return [str(item.get("response", "")) for item in data if item.get("response")]
+        # Always expect a dict with 'results' key
+        return [str(item.get("response", "")) for item in data.get("results", []) if item.get("response")]
     except json.JSONDecodeError as e:
         print(f"Error reading {filepath}: {e}")
         return []
@@ -88,84 +86,45 @@ def call_claude(client: anthropic.Anthropic, prompt: str) -> str:
         print(f"Error calling Claude API: {e}")
         return ""
 
-def save_summary(filename: str, summary: str):
+def save_summary(filename: str, summary: str, model: str, prompt: str, zipfile: str, summary_type: str, summary_features: str):
     try:
         summary_path = os.path.join(SUMMARY_DIR, filename.replace('.json', '_summary.json'))
         with open(summary_path, 'w') as f:
             json.dump({
                 "summary": summary,
-                "source_file": filename
+                "model": model,
+                "prompt": prompt,
+                "zipfile": zipfile,
+                "summary_type": summary_type,
+                "summary_features": summary_features
             }, f, indent=2)
         print(f"✓ Saved summary to {summary_path}")
     except Exception as e:
         print(f"Error saving summary for {filename}: {e}")
 
-def aggregate_results_to_csv():
-    """
-    Aggregate all result JSONs in the results/ directory into a single character_summaries.csv,
-    including model_name, image_name, caption for each image, and then at the end, one row per model with only the summary columns filled.
-    """
-    results_dir = "results"
-    summary_dir = "summaries"
-    output_csv = os.path.join("summaries", "character_summaries.csv")
-    image_rows = []
-    summary_rows = []
-    model_summaries = {}
-    for fname in os.listdir(results_dir):
-        if fname.endswith(".json") and not fname.endswith("_summary.json"):
-            json_path = os.path.join(results_dir, fname)
-            # Use rsplit to robustly remove the last _results for summary filename
-            if fname.endswith("_results.json"):
-                base = fname.rsplit("_results", 1)[0]
-                summary_filename = f"{base}_results_summary.json"
-            else:
-                base = fname[:-5]
-                summary_filename = f"{base}_summary.json"
-            model_name = base
-            summary_path = os.path.join(summary_dir, summary_filename)
-            summary_type = ""
-            summary_features = ""
-            if os.path.exists(summary_path):
-                with open(summary_path) as sf:
-                    summary_data = json.load(sf)
-                    summary_raw = summary_data.get("summary", "")
-                    try:
-                        summary_json = json.loads(summary_raw)
-                        summary_type = summary_json.get("type", "")
-                        summary_features = summary_json.get("features", "")
-                    except Exception:
-                        summary_type = ""
-                        summary_features = ""
-            # Store summary for this model for later (no summary_json key)
-            model_summaries[model_name] = {
-                "model_name": model_name,
-                "image_name": "",
-                "caption": "",
-                "summary_type": summary_type,
-                "summary_features": summary_features
-            }
-            # Add image rows (no summary_json key)
-            with open(json_path) as jf:
-                data = json.load(jf)
-            for row in data:
-                image_rows.append({
-                    "model_name": model_name,
-                    "image_name": row.get("image_name", ""),
-                    "caption": row.get("response", ""),
-                    "summary_type": "",
-                    "summary_features": ""
-                })
-    # Write to CSV: first all image rows, then one summary row per model
-    with open(output_csv, "w", newline="") as csvfile:
-        writer = csv.DictWriter(csvfile, fieldnames=[
-            "model_name", "image_name", "caption", "summary_type", "summary_features"
-        ])
-        writer.writeheader()
-        for row in image_rows:
-            writer.writerow(row)
-        for model_row in model_summaries.values():
-            writer.writerow(model_row)
-    print(f"Aggregated CSV written to {output_csv}")
+def write_zip_summaries_csv(summary_records):
+    # Group by zipfile using a standard dict
+    zip_to_records = {}
+    for rec in summary_records:
+        zf = rec['zipfile']
+        if zf not in zip_to_records:
+            zip_to_records[zf] = []
+        zip_to_records[zf].append(rec)
+    for zipfile, records in zip_to_records.items():
+        # Sort by model name for consistency
+        records = sorted(records, key=lambda r: r['model'])
+        csv_path = os.path.join(SUMMARY_DIR, f"{os.path.splitext(zipfile)[0]}_summaries.csv")
+        with open(csv_path, "w", newline="") as csvfile:
+            writer = csv.writer(csvfile)
+            # First row: key 'model', then model names
+            writer.writerow(['model'] + [r['model'] for r in records])
+            # Second row: key 'prompt', then prompts
+            writer.writerow(['prompt'] + [r['prompt'] for r in records])
+            # Third row: key 'summary_type', then summary types
+            writer.writerow(['summary_type'] + [r['summary_type'] for r in records])
+            # Fourth row: key 'summary_features', then summary features
+            writer.writerow(['summary_features'] + [r['summary_features'] for r in records])
+        print(f"Wrote summary CSV for {zipfile} to {csv_path}")
 
 def main():
     print("🚀 Starting character summarization...")
@@ -174,57 +133,65 @@ def main():
     client = get_anthropic_client()
     
     json_files = [f for f in os.listdir(RESULTS_DIR) if f.endswith('.json')]
-    if not json_files:
-        print(f"No JSON files found in {RESULTS_DIR}")
-        return
-    
+
     print(f"Found {len(json_files)} files to process")
     
-    csv_rows = []
+    summary_records = []
     
     for i, filename in enumerate(json_files, 1):
         print(f"\n📁 Processing {i}/{len(json_files)}: {filename}")
         
         filepath = os.path.join(RESULTS_DIR, filename)
+        base = filename[:-5]
+        parts = base.split('_')
+        if len(parts) < 3:
+            print(f"⚠️  Unexpected filename format for {filename}, skipping...")
+            continue
+        zipfile_name = parts[0] + '.zip'
+        # Model name is all parts except the first (zipfile) and last (hash)
+        model = '_'.join(parts[1:-1])
+        try:
+            with open(filepath, 'r') as f:
+                data = json.load(f)
+            prompt = data.get('prompt', '')
+        except Exception as e:
+            print(f"⚠️  Could not load prompt from {filename}: {e}")
+            prompt = ''
         captions = load_captions(filepath)
-        
         if not captions:
             print(f"⚠️  No captions found in {filename}, skipping...")
             continue
-        
         captions_text = "\n".join(captions)
-        prompt = PROMPT_TEMPLATE.format(captions_text=captions_text)
+        prompt_for_llm = PROMPT_TEMPLATE.format(captions_text=captions_text)
         
         print(f"📝 Sending to Claude Sonnet 3.5...")
         
-        summary = call_claude(client, prompt)
-        
+        summary = call_claude(client, prompt_for_llm)
+        summary_type = ""
+        summary_features = ""
         if summary:
             print(f"✅ Summary for {filename}:")
             print(f"   {summary}")
-            save_summary(filename, summary)
             # Try to parse summary as JSON
             try:
                 summary_json = json.loads(summary)
-                csv_rows.append({
-                    "source_file": filename,
-                    "type": summary_json.get("type", ""),
-                    "features": summary_json.get("features", ""),
-                    "summary": summary
-                })
+                summary_type = summary_json.get("type", "")
+                summary_features = summary_json.get("features", "")
             except Exception:
-                csv_rows.append({
-                    "source_file": filename,
-                    "type": "",
-                    "features": "",
-                    "summary": summary
-                })
+                summary_type = ""
+                summary_features = ""
+            save_summary(filename, summary, model, prompt, zipfile_name, summary_type, summary_features)
+            summary_records.append({
+                "zipfile": zipfile_name,
+                "model": model,
+                "prompt": prompt,
+                "summary_type": summary_type,
+                "summary_features": summary_features
+            })
         else:
             print(f"❌ Failed to get summary for {filename}")
+    write_zip_summaries_csv(summary_records)
     print(f"\n🎉 Processing complete!")
 
 if __name__ == "__main__":
-    if len(sys.argv) > 1 and sys.argv[1] == "aggregate":
-        aggregate_results_to_csv()
-    else:
-        main() 
+    main() 
