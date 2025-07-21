@@ -6,14 +6,14 @@ A toolkit for generating and summarizing image captions, focusing on extracting 
 - Run multiple image captioning models on batches of images
 - Supports OpenAI GPT-4 Vision and Replicate models (LLaVA, BLIP, Moondream2)
 - Summarizes the main character's physical features from all captions per model
-- Aggregates all results and summaries into a single CSV for analysis
+- For each zip, generates a summary CSV with model, prompt, summary type, and summary features for each model
 - Flexible CLI: process multiple zip files, each zip is processed independently
 - Output JSON files include prompt and are named by zip/model/prompt
 
 ## Directory Structure
 - `img_storage/` — Images extracted from zip files for processing
 - `results/` — Model captioning result JSON files (output)
-- `summaries/` — Summaries and aggregated CSVs (output)
+- `summaries/` — Summaries and per-zip summary CSVs (output)
 - `summarize_characters.py` — Main script for summarizing and aggregating
 - `image_captioners.py`, `cli.py` — Model and CLI logic
 
@@ -48,10 +48,9 @@ This will caption all images from both `cat.zip` and `chole.zip` (in order, no d
 
 - Only uncommented models in the `combos` list in `cli.py` will be run. You can run the same model with different prompts by adding multiple entries to `combos`.
 - Each model call uses a new session/client for isolation.
-- Output files are named as `<zipname>_<modelname>_<promptshort>.json` (e.g., `cat_openai_gpt4_vision_Look_at.json` or `cat_salesforce_blip_none.json`).
-  - `<promptshort>` is the first two words of the prompt, or 'none' if no prompt is provided.
+- Output files are named as `<zipname>_<modelname>_<prompthash>.json` (e.g., `cat_openai_gpt4_vision_cd428f50.json`).
 - Each zip also produces a CSV file of all captions for that zip: `<zipname>_all_captions.csv`.
-- The prompt used is included as a top-level field in the output JSON, along with a `prompt_short` field.
+- The prompt used is included as a top-level field in the output JSON.
 
 **Output JSON format:**
 ```json
@@ -76,16 +75,32 @@ uv run summarize_characters.py
 ```
 
 - Each summary will be saved as a JSON file in `summaries/`, named after the input file.
+- For each zip, a summary CSV is created in `summaries/` named `<zipname>_summaries.csv`.
+- The summary CSV has the following format:
+  - First row: `model`, then model names for that zip
+  - Second row: `prompt`, then prompts for each model
+  - Third row: `summary_type`, then summary types for each model
+  - Fourth row: `summary_features`, then summary features for each model
 
-### 3. Aggregate All Results to CSV
-After summarization, aggregate all results and summaries into a single CSV:
-
-```bash
-uv run summarize_characters.py aggregate
+**Summary JSON format:**
+```json
+{
+  "summary": "...raw summary from Claude...",
+  "model": "...model name...",
+  "prompt": "...prompt used...",
+  "zipfile": "...zip file name...",
+  "summary_type": "...type from summary...",
+  "summary_features": "...features from summary..."
+}
 ```
 
-- This creates `summaries/character_summaries.csv` with columns:
-  - `model_name`, `image_name`, `caption`, `summary_type`, `summary_features`
+**Summary CSV example:**
+```
+model,model1,model2,...
+prompt,prompt1,prompt2,...
+summary_type,type1,type2,...
+summary_features,features1,features2,...
+```
 
 ## Model Support
 - **OpenAI GPT-4 Vision**: Uses the OpenAI API, requires `OPENAI_API_KEY`.
