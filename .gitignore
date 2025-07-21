@@ -133,7 +133,6 @@ test.zip
 img_storage/
 
 # uv package manager lock file
-uv.lock
 results/
 summaries/
 .DS_Store
